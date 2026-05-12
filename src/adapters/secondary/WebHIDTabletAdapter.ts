@@ -53,7 +53,8 @@ const STU540_CAPABILITIES = Object.freeze({
  *   0x07 – some STU-300/430/430V firmware; not expected on STU-540
  */
 const REPORT = Object.freeze({
-  PEN_DATA: 0x01,
+  PEN_DATA: 0x34,
+  PEN_DATA_LEGACY: 0x01,
   BUTTON_DATA: 0x02,
   CLEAR_SCREEN: 0x20,
   WRITE_IMAGE: 0x21,
@@ -230,7 +231,8 @@ export class WebHIDTabletAdapter implements WacomTabletPort {
     this.inputHandler = (event: HIDInputReportEvent) => {
       try {
         switch (event.reportId) {
-          case REPORT.PEN_DATA: {
+          case REPORT.PEN_DATA:
+          case REPORT.PEN_DATA_LEGACY: {
             const parsed = this.parsePenReport(event.data);
             const point = PenPoint.create({
               x: parsed.x,
