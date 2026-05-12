@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Wacom STU-540 — Power Apps iframe host</title>
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: Segoe UI, system-ui, sans-serif; margin: 0; padding: 16px; }
+    .stage { display: grid; gap: 12px; grid-template-rows: auto 1fr auto; min-height: 480px; }
+    .preview { border: 1px solid #cccfd6; border-radius: 8px; background: #fff; touch-action: none; width: 100%; }
+    .actions { display: flex; gap: 8px; }
+    button {
+      padding: 8px 16px; border-radius: 6px; border: 1px solid #8c8c8c; background: #fff;
+      font-size: 14px; cursor: pointer;
+    }
+    button.primary { background: #0a205a; color: #fff; border-color: #0a205a; }
+    button.success { background: #1a7f37; color: #fff; border-color: #1a7f37; }
+    .status { font-size: 12px; color: #555; }
+    .error { color: #b3261e; }
+    #result-section { display: none; gap: 12px; flex-direction: column; }
+    #result-section img { border: 1px solid #cccfd6; border-radius: 8px; max-width: 100%; background: #fff; }
+    #result-section .result-label { font-size: 13px; font-weight: 600; color: #1a7f37; }
+    #capture-section { display: flex; gap: 8px; }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <header>
+      <strong>Wacom STU-540 capture</strong>
+      <div class="status" id="status">Ready.</div>
+      <div class="status" id="sdk-status">Checking Signature SDK…</div>
+    </header>
+
+    <canvas id="preview" class="preview" width="800" height="480" aria-label="Signature preview"></canvas>
+
+    <!-- Result view: shown after a successful capture -->
+    <div id="result-section">
+      <div class="result-label">✓ Firma capturada</div>
+      <img id="result-img" alt="Captured signature" />
+      <div>
+        <button id="btn-sign-again" class="success">Firmar de nuevo</button>
+      </div>
+    </div>
+
+    <!-- Capture action buttons -->
+    <div id="capture-section" class="actions">
+      <button id="btn-clear">Clear</button>
+      <button id="btn-cancel">Cancel</button>
+      <button id="btn-ok" class="primary">OK</button>
+    </div>
+
+    <!-- Diagnostic panel: shows raw HID events to help confirm tablet connectivity -->
+    <details id="diag-panel" style="margin-top:12px;font-size:11px;color:#555">
+      <summary style="cursor:pointer;user-select:none">⚙ Diagnóstico HID (expandir)</summary>
+      <pre id="diag-log" style="background:#f5f5f5;border:1px solid #ddd;border-radius:4px;padding:8px;max-height:160px;overflow:auto;font-size:10px;white-space:pre-wrap;word-break:break-all">Esperando eventos HID…</pre>
+    </details>
+  </div>
+
+  <script type="module">
+    import { WacomStu540Connector } from '../dist/index.js';
+
+    const statusEl = document.getElementById('status');
+    const sdkStatusEl = document.getElementById('sdk-status');
+    const btnClear = document.getElementById('btn-clear');
+    const btnCancel = document.getElementById('btn-cancel');
+    const btnOk = document.getElementById('btn-ok');
+    const diagLog = document.getElementById('diag-log');
+
+    // Forward connector log output to the diagnostic panel.
+    const _origConsoleLog = console.log.bind(console);
+    console.log = function(...args) {
+      _origConsoleLog(...args);
+      const msg = args.map((a) => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+      if (msg.includes('wacom-stu540') || msg.includes('WebHID') || msg.includes('reportId')) {
+        diagLog.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + diagLog.textContent;
+      }
+    };
+
+    function setStatus(text, isError = false) {
+      statusEl.textContent = text;
+      statusEl.classList.toggle('error', isError);
+    }
+
+    function setSdkStatus(text, isError = false) {
+      sdkStatusEl.textContent = text;
+      sdkStatusEl.classList.toggle('error', isError);
+    }
+
+    function hasFullSignatureSdk() {
+      return !!(
+        window.WacomGSS &&
+        window.WacomGSS.SigObj &&
+        window.WacomGSS.License &&
+        typeof window.WacomGSS.License.setLicense === 'function'
+      );
+    }
+
+    function normalizeSdkGlobal() {
+      if (!window.WacomGSS && window.com?.WacomGSS) {
+        window.WacomGSS = window.com.WacomGSS;
+      }
+    }
+
+    function toAbsoluteUrl(src) {
+      return new URL(src, window.location.origin).href;
+    }
+
+    function buildLocateFileFromSrc(src) {
+      const baseUrl = toAbsoluteUrl(src);
+      const slashIndex = baseUrl.lastIndexOf('/');
+      const baseDir = slashIndex >= 0 ? baseUrl.slice(0, slashIndex + 1) : baseUrl;
+      return (path) => new URL(path, baseDir).href;
+    }
+
+    async function loadClassicScript(src) {
+      const previousModule = window.Module;
+      window.Module = {
+        ...(previousModule ?? {}),
+        locateFile: buildLocateFileFromSrc(src),
+      };
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = false;
+        script.onload = () => resolve();
+        script.onerror = () => reject(new Error(`SDK script failed: ${src}`));
+        document.head.appendChild(script);
+      });
+    }
+
+    async function loadEsmSdk(src) {
+      const mod = await import(toAbsoluteUrl(src));
+      // Some SDK builds set window.WacomGSS as a side-effect; others export
+      // the namespace as named or default exports.
+      if (mod.WacomGSS && !window.WacomGSS) {
+        window.WacomGSS = mod.WacomGSS;
+      }
+      if (typeof mod.default === 'function') {
+        const result = await mod.default({
+          locateFile: buildLocateFileFromSrc(src),
+        });
+        // The init function may return the SDK namespace directly.
+        if (result && typeof result === 'object' && !window.WacomGSS) {
+          window.WacomGSS = result;
+        }
+      } else if (mod.default && typeof mod.default === 'object' && !window.WacomGSS) {
+        window.WacomGSS = mod.default;
+      }
+      normalizeSdkGlobal();
+    }
+
+    async function ensureWacomSdk(params) {
+      normalizeSdkGlobal();
+      if (hasFullSignatureSdk()) return { loaded: true, source: 'preloaded' };
+
+      // Determine mode for a given src path.
+      // The "legacy" folder contains a classic Emscripten build that MUST be
+      // loaded as a regular <script> so that window.Module.locateFile is
+      // honoured and the WASM file is resolved relative to the JS file, not
+      // relative to the page. The root signature-sdk.js is a Vite ESM build
+      // that handles its own WASM via import.meta.url.
+      function detectMode(src, hint) {
+        if (hint && hint !== 'auto') return hint;
+        if (src.includes('/legacy/')) return 'classic';
+        if (src.endsWith('signature-sdk.js')) return 'esm';
+        return 'classic';
+      }
+
+      const candidates = [
+        { src: params.get('sdkSrc'), mode: 'auto' },
+        { src: '/node_modules/@wacom/signature-sdk/signature-sdk.js', mode: 'esm' },
+        // Legacy SDK must be loaded as classic <script>, NOT via import(),
+        // so window.Module.locateFile is set before the Emscripten runtime runs.
+        { src: '/node_modules/@wacom/signature-sdk/legacy/signature-sdk.js', mode: 'classic' },
+      ].filter((c) => !!c.src);
+
+      for (const candidate of candidates) {
+        const src = candidate.src;
+        const mode = detectMode(src, candidate.mode);
+        try {
+          if (mode === 'esm') {
+            await loadEsmSdk(src);
+          } else {
+            await loadClassicScript(src);
+          }
+          normalizeSdkGlobal();
+          if (hasFullSignatureSdk()) return { loaded: true, source: src };
+        } catch (err) {
+          console.warn('[WacomSDK] candidate failed:', src, err);
+        }
+      }
+      return { loaded: false, source: undefined };
+    }
+
+    // The Canvas app must inject the license via a Custom Connector call
+    // or via URL hash. NEVER hardcode it.
+    const params = new URLSearchParams(location.search);
+    const sdk = await ensureWacomSdk(params);
+    if (sdk.loaded) {
+      setSdkStatus(`Signature SDK loaded (${sdk.source}).`);
+    } else {
+      setSdkStatus(
+        'Signature SDK not detected. Running in fallback mode (non-biometric).',
+        true,
+      );
+    }
+
+    const license = params.get('license');
+    if (!license) {
+      setStatus('Missing license parameter.', true);
+      throw new Error('Missing ?license= query parameter');
+    }
+
+    const canvas = document.getElementById('preview');
+    const resultImg = document.getElementById('result-img');
+    const resultSection = document.getElementById('result-section');
+    const btnSignAgain = document.getElementById('btn-sign-again');
+    const captureSection = document.getElementById('capture-section');
+
+    // Build a fresh connector for each capture session (connect→capture→disconnect).
+    function buildConnector() {
+      return WacomStu540Connector.withLicense(license, {
+        canvasElement: canvas,
+        overrides: {
+          ui: {
+            title: params.get('title') ?? 'Please sign',
+            reason: params.get('reason') ?? 'Document acceptance',
+          },
+        },
+      });
+    }
+
+    let connector = buildConnector();
+    let captureInFlight = false;
+
+    const captureRequest = {
+      signerName: params.get('who') ?? 'Anonymous',
+      reason: params.get('reason') ?? 'Document acceptance',
+      outputFormat: 'png',
+      outputWidthPx: 1200,
+      outputHeightPx: 720,
+    };
+
+    function showResult(imageDataUrl, strokeCount) {
+      // Display the captured signature image.
+      resultImg.src = imageDataUrl;
+      resultSection.style.display = 'block';
+      captureSection.style.display = 'none';
+    }
+
+    function resetToCapture() {
+      resultSection.style.display = 'none';
+      captureSection.style.display = 'flex';
+      resultImg.src = '';
+      // Clear the live-preview canvas.
+      const ctx = canvas.getContext('2d');
+      ctx?.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    async function startCapture() {
+      if (captureInFlight) return;
+      captureInFlight = true;
+      setStatus('Sign on the tablet, then press OK below.');
+
+      // Each capture needs a fresh connector because the previous one
+      // disconnected the tablet and disposed the SDK after its session.
+      connector = buildConnector();
+
+      // Re-attach the postMessage bridge each time (for Power Apps iframe hosting).
+      connector.exposeToPowerAppsViaPostMessage(/^https:\/\/.+\.powerapps\.com$/);
+
+      const result = await connector.captureSignature(captureRequest);
+      captureInFlight = false;
+
+      if (result.ok) {
+        const value = result.value;
+        setStatus(`✓ Captured ${value.strokeCount} stroke(s). Signer: ${value.metadata.who}`);
+        showResult(value.imageDataUrl, value.strokeCount);
+
+        // Send the result to a parent frame if running inside an iframe.
+        const parentOrigin = params.get('parentOrigin') ?? '*';
+        if (window.parent !== window) {
+          window.parent.postMessage(
+            { type: 'wacom-stu540:capture-complete', data: value },
+            parentOrigin,
+          );
+        }
+      } else {
+        setStatus(`Capture failed: ${result.error.code} — ${result.error.message}`, true);
+      }
+    }
+
+    // Emit a virtual button event to the tablet adapter (works for WebHID
+    // and fallback adapters alike, because 'emit' is accessible at runtime).
+    function emitVirtualButton(button) {
+      const tablet = connector?.internal?.deps?.tablet;
+      if (tablet && typeof tablet.emit === 'function') {
+        tablet.emit({ type: 'button', button });
+      }
+    }
+
+    // Expose to Power Apps via postMessage.
+    // NOTE: re-attached inside startCapture() for every new connector instance.
+
+    btnClear.addEventListener('click', () => {
+      if (captureInFlight) {
+        emitVirtualButton('clear');
+      }
+    });
+
+    btnCancel.addEventListener('click', () => {
+      if (captureInFlight) {
+        emitVirtualButton('cancel');
+      }
+    });
+
+    btnOk.addEventListener('click', () => {
+      if (!captureInFlight) {
+        void startCapture();
+      } else {
+        emitVirtualButton('ok');
+      }
+    });
+
+    btnSignAgain.addEventListener('click', () => {
+      resetToCapture();
+      void startCapture();
+    });
+
+    // Auto-start capture when the page loads.
+    void startCapture();
+  </script>
+</body>
+</html>
