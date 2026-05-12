@@ -278,6 +278,26 @@
         setStatus(`✓ Captured ${value.strokeCount} stroke(s). Signer: ${value.metadata.who}`);
         showResult(value.imageDataUrl, value.strokeCount);
 
+        // Log the raw image bytes of the signature for inspection.
+        // imageDataUrl is "data:image/png;base64,<...>" — decode and dump.
+        try {
+          const dataUrl = value.imageDataUrl ?? '';
+          const commaIdx = dataUrl.indexOf(',');
+          const b64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+          const binary = atob(b64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          console.log('[wacom-stu540] Signature image bytes', {
+            mime: dataUrl.slice(5, commaIdx > 0 ? commaIdx : 5),
+            byteLength: bytes.byteLength,
+            base64Length: b64.length,
+            base64: b64,
+            bytes,
+          });
+        } catch (e) {
+          console.warn('[wacom-stu540] Could not decode image bytes', e);
+        }
+
         // Send the result to a parent frame if running inside an iframe.
         const parentOrigin = params.get('parentOrigin') ?? '*';
         if (window.parent !== window) {

@@ -213,13 +213,33 @@ export class WebHIDTabletAdapter implements WacomTabletPort {
     if (!this.device) {
       return Result.fail(new TabletConnectionError('Tablet not connected'));
     }
+    // The official Wacom STU SDK clears the screen with a FEATURE report:
+    //   intf.set([0x20, 0]) → usbDevice.sendFeatureReport(0x20, [0])
+    // Some browser/firmware combinations only accept OUTPUT reports, so we
+    // try both. The first one that doesn't throw wins.
+    const payload = new Uint8Array([0x00]);
+    let sent = false;
     try {
-      await this.device.sendReport(REPORT.CLEAR_SCREEN, new Uint8Array([0x00]));
-      return Result.ok(undefined);
+      await this.device.sendFeatureReport(REPORT.CLEAR_SCREEN, payload);
+      sent = true;
+      this.logger.debug('clear: CLEAR_SCREEN sent via feature report');
     } catch (err) {
-      this.logger.warn('clear: CLEAR_SCREEN output report failed', { error: String(err) });
-      return Result.ok(undefined);
+      this.logger.debug('clear: feature report failed, trying output report', {
+        error: String(err),
+      });
     }
+    if (!sent) {
+      try {
+        await this.device.sendReport(REPORT.CLEAR_SCREEN, payload);
+        sent = true;
+        this.logger.debug('clear: CLEAR_SCREEN sent via output report');
+      } catch (err) {
+        this.logger.warn('clear: both feature and output reports failed', {
+          error: String(err),
+        });
+      }
+    }
+    return Result.ok(undefined);
   }
 
   onEvent(listener: TabletEventListener): () => void {

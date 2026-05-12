@@ -133,6 +133,10 @@ export class CaptureSignatureUseCase {
         return new Promise(() => undefined);
 
       case 'cancel':
+        // Wipe the tablet LCD so the next session starts clean. We ignore
+        // the result because the user is cancelling anyway.
+        await this.tablet.clear();
+        this.renderer.clear();
         return Result.fail(
           new SignatureCancelledError('User cancelled the signature'),
         );

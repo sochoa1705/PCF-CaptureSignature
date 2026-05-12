@@ -136,9 +136,18 @@ export class WacomSignatureSdkAdapter implements SignatureSdkPort {
       const serialized = sigObj.serialise('FSS');
       return Result.ok({ signature, sigObjBase64: serialized.base64 });
     } catch (err) {
-      return Result.fail(
-        new SignatureRenderError('Failed to build Wacom SigObj from PenPoints', err),
+      // Building the real SigObj failed — most often because no Wacom
+      // runtime license has been activated. Don't fail the whole capture:
+      // fall back to the tagged-JSON envelope so the host application still
+      // gets a usable Signature + image.
+      this.logger.warn(
+        'SigObj build failed — falling back to JSON envelope (no biometric data)',
+        { error: String(err) },
       );
+      return Result.ok({
+        signature,
+        sigObjBase64: this.toRawFallbackEnvelope(signature),
+      });
     }
   }
 
@@ -175,9 +184,14 @@ export class WacomSignatureSdkAdapter implements SignatureSdkPort {
           heightPx: req.heightPx,
         });
       } catch (err) {
-        return Result.fail(
-          new SignatureRenderError('Wacom SDK rasterisation failed', err),
+        // SDK rasterisation failed (typically missing runtime license or
+        // an unexpected SDK API shape). Fall back to the canvas renderer
+        // so the host application still gets a usable PNG/JPEG.
+        this.logger.warn(
+          'Wacom SDK rasterisation failed — falling back to canvas renderer',
+          { error: String(err) },
         );
+        return this.renderFallback(req, inkColor, inkWidthPx);
       }
     }
 
