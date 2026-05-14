@@ -79,7 +79,9 @@ git push
 ```
 
 Al terminar el workflow, tu URL será algo como:
-`https://<random-name>.azurestaticapps.net/capture.html`
+`https://<random-name>.azurestaticapps.net/`
+(o `https://<random-name>.azurestaticapps.net/capture.html` — ambas funcionan
+porque `staticwebapp.config.json` reescribe `capture.html → index.html`).
 
 **Probarla en un navegador:** debe cargar la página de captura. Si abres
 DevTools verás `[wacom-stu540] capture-started` cuando inicia.
@@ -133,7 +135,7 @@ El control quedará disponible en el editor de Canvas como
 
 | Propiedad | Ejemplo | Notas |
 |---|---|---|
-| `IframeUrl` | `"https://<tu-swa>.azurestaticapps.net/capture.html"` | **Obligatorio** |
+| `IframeUrl` | `"https://<tu-swa>.azurestaticapps.net/"` | **Obligatorio** |
 | `SignerName` | `User().FullName` | |
 | `Reason` | `"Aceptación de términos"` | |
 | `Location` | `"Sucursal Guayaquil"` | |
@@ -253,7 +255,7 @@ wacom-stu540-connector/
 ├── examples/                     # Página de prueba local (no se despliega)
 ├── dist/                         # Build de tsup
 ├── web/                          # ★ Bundle desplegado a Azure SWA
-│   ├── capture.html
+│   ├── index.html                # (página de captura — debe llamarse así por SWA)
 │   ├── index.js                  # (generado por scripts/build-web.mjs)
 │   ├── signature-sdk.{js,wasm}   # (generado)
 │   ├── stu-sdk.min.js            # (generado)

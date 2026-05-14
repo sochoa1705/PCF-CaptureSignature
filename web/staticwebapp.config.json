@@ -14,10 +14,14 @@
   },
   "routes": [
     {
-      "route": "/capture.html",
+      "route": "/index.html",
       "headers": {
         "Cache-Control": "no-store, no-cache, must-revalidate"
       }
+    },
+    {
+      "route": "/capture.html",
+      "rewrite": "/index.html"
     },
     {
       "route": "/*.wasm",
@@ -33,7 +37,7 @@
     }
   ],
   "navigationFallback": {
-    "rewrite": "/capture.html",
+    "rewrite": "/index.html",
     "exclude": ["/*.{js,wasm,css,png,ico}"]
   }
 }
