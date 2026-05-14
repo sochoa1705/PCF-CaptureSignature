@@ -60,7 +60,7 @@
          same command can be sent twice in a row. -->
     <property name="Command"
               display-name-key="Command"
-              description-key="Set to 'start', 'cancel', 'clear' or 'submit' to drive the capture from Power Fx. Resets to empty after dispatch."
+              description-key="Set to start, cancel, clear or submit to drive the capture from Power Fx. Resets to empty after dispatch."
               of-type="SingleLine.Text"
               usage="bound"
               required="false" />
