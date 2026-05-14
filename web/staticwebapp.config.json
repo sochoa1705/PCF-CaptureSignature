@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json.schemastore.org/staticwebapp.config.json",
+  "globalHeaders": {
+    "Permissions-Policy": "hid=(self \"https://apps.powerapps.com\" \"https://make.powerapps.com\" \"https://*.powerapps.com\" \"https://*.dynamics.com\")",
+    "Cross-Origin-Embedder-Policy": "credentialless",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "cross-origin",
+    "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' blob: data:; worker-src 'self' blob:; frame-ancestors 'self' https://apps.powerapps.com https://make.powerapps.com https://*.powerapps.com https://*.dynamics.com;",
+    "X-Frame-Options": "ALLOW-FROM https://apps.powerapps.com"
+  },
+  "mimeTypes": {
+    ".wasm": "application/wasm",
+    ".js": "application/javascript"
+  },
+  "routes": [
+    {
+      "route": "/capture.html",
+      "headers": {
+        "Cache-Control": "no-store, no-cache, must-revalidate"
+      }
+    },
+    {
+      "route": "/*.wasm",
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      }
+    },
+    {
+      "route": "/*.js",
+      "headers": {
+        "Cache-Control": "public, max-age=86400"
+      }
+    }
+  ],
+  "navigationFallback": {
+    "rewrite": "/capture.html",
+    "exclude": ["/*.{js,wasm,css,png,ico}"]
+  }
+}

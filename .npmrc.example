@@ -1,0 +1,3 @@
+@wacom:registry=https://npm.wacom.com/node-modules/
+//npm.wacom.com/node-modules/:_authToken=${WACOM_NPM_AUTH_TOKEN}
+always-auth=true

@@ -1,0 +1,59 @@
+{
+  "name": "wacom-stu540-connector",
+  "version": "1.0.0",
+  "description": "Production-ready Wacom STU-540 signature connector for Power Apps Canvas, built with hexagonal architecture and strict TypeScript.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && tsup src/index.ts --format esm,cjs --dts --clean",
+    "build:web": "npm run build && node scripts/build-web.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "format": "prettier --write src tests examples",
+    "serve:local": "npx http-server . -p 5500 -c-1"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "prettier": "^3.2.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "keywords": [
+    "wacom",
+    "stu-540",
+    "signature",
+    "power-apps",
+    "webhid",
+    "hexagonal",
+    "ports-and-adapters",
+    "biometric"
+  ],
+  "license": "MIT",
+  "directories": {
+    "example": "examples",
+    "test": "tests"
+  },
+  "author": "",
+  "dependencies": {
+    "@wacom/signature-sdk": "^2.1.1"
+  }
+}
