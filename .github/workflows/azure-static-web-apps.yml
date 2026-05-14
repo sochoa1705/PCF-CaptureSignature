@@ -1,0 +1,52 @@
+name: Deploy capture page to Azure Static Web Apps
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "web/**"
+      - "scripts/build-web.mjs"
+      - "package.json"
+      - ".github/workflows/azure-static-web-apps.yml"
+  workflow_dispatch: {}
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    name: Build & Deploy
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Configure Wacom npm registry
+        env:
+          WACOM_NPM_AUTH_TOKEN: ${{ secrets.WACOM_NPM_AUTH_TOKEN }}
+        run: |
+          cat > .npmrc <<EOF
+          @wacom:registry=https://npm.wacom.com/
+          //npm.wacom.com/:_authToken=${WACOM_NPM_AUTH_TOKEN}
+          EOF
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build connector + assemble web bundle
+        run: npm run build:web
+
+      - name: Deploy to Azure Static Web Apps
+        id: swa
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: "upload"
+          app_location: "web"
+          api_location: ""
+          output_location: ""
+          skip_app_build: true

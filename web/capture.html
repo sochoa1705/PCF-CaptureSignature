@@ -1,0 +1,336 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Wacom STU-540 capture</title>
+  <style>
+    :root { color-scheme: light; }
+    html, body { height: 100%; margin: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      padding: 12px;
+      box-sizing: border-box;
+      background: #f7f8fa;
+    }
+    .stage { display: flex; flex-direction: column; gap: 10px; height: 100%; }
+    .header { font-size: 13px; color: #444; }
+    .header strong { color: #0a205a; }
+    .preview {
+      border: 1px solid #cccfd6;
+      border-radius: 8px;
+      background: #fff;
+      touch-action: none;
+      width: 100%;
+      max-height: 60vh;
+    }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    button {
+      padding: 8px 16px; border-radius: 6px; border: 1px solid #8c8c8c; background: #fff;
+      font-size: 14px; cursor: pointer;
+    }
+    button.primary { background: #0a205a; color: #fff; border-color: #0a205a; }
+    button.success { background: #1a7f37; color: #fff; border-color: #1a7f37; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status { font-size: 12px; color: #555; }
+    .error { color: #b3261e; }
+    #result-section { display: none; flex-direction: column; gap: 10px; }
+    #result-section img { border: 1px solid #cccfd6; border-radius: 8px; max-width: 100%; max-height: 50vh; background: #fff; }
+    #result-section .result-label { font-size: 13px; font-weight: 600; color: #1a7f37; }
+    #capture-section { display: flex; gap: 8px; }
+    details { font-size: 11px; color: #555; }
+  </style>
+</head>
+<body>
+  <div class="stage">
+    <header class="header">
+      <strong>Wacom STU-540 capture</strong>
+      <div class="status" id="status">Iniciando…</div>
+      <div class="status" id="sdk-status"></div>
+    </header>
+
+    <canvas id="preview" class="preview" width="800" height="480" aria-label="Signature preview"></canvas>
+
+    <div id="result-section">
+      <div class="result-label">✓ Firma capturada</div>
+      <img id="result-img" alt="Captured signature" />
+      <div class="actions">
+        <button id="btn-sign-again" class="success">Firmar de nuevo</button>
+      </div>
+    </div>
+
+    <div id="capture-section" class="actions">
+      <button id="btn-clear">Borrar</button>
+      <button id="btn-cancel">Cancelar</button>
+      <button id="btn-ok" class="primary">OK</button>
+    </div>
+
+    <details>
+      <summary>⚙ Diagnóstico</summary>
+      <pre id="diag-log" style="background:#f5f5f5;border:1px solid #ddd;border-radius:4px;padding:8px;max-height:140px;overflow:auto;font-size:10px;white-space:pre-wrap;word-break:break-all">Esperando eventos…</pre>
+    </details>
+  </div>
+
+  <script type="module">
+    import { WacomStu540Connector } from './index.js';
+
+    // ── Query parameters (configured by the PCF) ──────────────────────
+    const params = new URLSearchParams(location.search);
+    const parentOrigin = params.get('parentOrigin') ?? '*';
+    const signerName = params.get('signer') ?? 'Anonymous';
+    const reason = params.get('reason') ?? 'Document acceptance';
+    const where = params.get('location') ?? 'Web';
+    const license = params.get('license') ?? '';
+    const autoStart = (params.get('autoStart') ?? 'true').toLowerCase() !== 'false';
+
+    // ── DOM ──────────────────────────────────────────────────────────
+    const statusEl = document.getElementById('status');
+    const sdkStatusEl = document.getElementById('sdk-status');
+    const btnClear = document.getElementById('btn-clear');
+    const btnCancel = document.getElementById('btn-cancel');
+    const btnOk = document.getElementById('btn-ok');
+    const btnSignAgain = document.getElementById('btn-sign-again');
+    const canvas = document.getElementById('preview');
+    const resultImg = document.getElementById('result-img');
+    const resultSection = document.getElementById('result-section');
+    const captureSection = document.getElementById('capture-section');
+    const diagLog = document.getElementById('diag-log');
+
+    // ── Diagnostic log forwarding ─────────────────────────────────────
+    const _origLog = console.log.bind(console);
+    console.log = function (...args) {
+      _origLog(...args);
+      const msg = args.map((a) => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+      if (msg.includes('wacom-stu540') || msg.includes('WebHID')) {
+        diagLog.textContent = `[${new Date().toLocaleTimeString()}] ${msg}\n` + diagLog.textContent;
+      }
+    };
+
+    function setStatus(text, isError = false) {
+      statusEl.textContent = text;
+      statusEl.classList.toggle('error', isError);
+    }
+    function setSdkStatus(text, isError = false) {
+      sdkStatusEl.textContent = text;
+      sdkStatusEl.classList.toggle('error', isError);
+    }
+
+    // ── postMessage protocol with the PCF host ───────────────────────
+    function postToHost(type, payload) {
+      if (window.parent === window) return;
+      try {
+        window.parent.postMessage({ type, payload }, parentOrigin);
+      } catch (e) {
+        console.warn('[wacom-stu540] postMessage failed', e);
+      }
+    }
+
+    // ── Wacom Signature SDK loader (same logic as local example) ─────
+    function hasFullSignatureSdk() {
+      return !!(
+        window.WacomGSS &&
+        window.WacomGSS.SigObj &&
+        window.WacomGSS.License &&
+        typeof window.WacomGSS.License.setLicense === 'function'
+      );
+    }
+    function normalizeSdkGlobal() {
+      if (!window.WacomGSS && window.com?.WacomGSS) {
+        window.WacomGSS = window.com.WacomGSS;
+      }
+    }
+    function buildLocateFileFromSrc(src) {
+      const baseUrl = new URL(src, window.location.href).href;
+      const slashIdx = baseUrl.lastIndexOf('/');
+      const baseDir = slashIdx >= 0 ? baseUrl.slice(0, slashIdx + 1) : baseUrl;
+      return (path) => new URL(path, baseDir).href;
+    }
+    async function loadClassicScript(src) {
+      window.Module = { ...(window.Module ?? {}), locateFile: buildLocateFileFromSrc(src) };
+      await new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src = src; s.async = false;
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error(`SDK script failed: ${src}`));
+        document.head.appendChild(s);
+      });
+    }
+    async function ensureWacomSdk() {
+      normalizeSdkGlobal();
+      if (hasFullSignatureSdk()) return { loaded: true, source: 'preloaded' };
+      // In the SWA bundle we ship the SDK alongside this HTML so paths are local.
+      const candidates = ['./signature-sdk.js'];
+      for (const src of candidates) {
+        try {
+          await loadClassicScript(src);
+          normalizeSdkGlobal();
+          if (hasFullSignatureSdk()) return { loaded: true, source: src };
+        } catch (err) {
+          console.warn('[wacom-stu540] SDK candidate failed', src, err);
+        }
+      }
+      return { loaded: false, source: undefined };
+    }
+
+    // ── Capture lifecycle ────────────────────────────────────────────
+    let connector = null;
+    let captureInFlight = false;
+
+    function buildConnector() {
+      // The connector accepts an empty string as "no biometric license" and
+      // gracefully falls back to canvas-only output (which is what we want
+      // when no Wacom runtime license is provisioned).
+      return WacomStu540Connector.withLicense(license || '', {
+        canvasElement: canvas,
+        overrides: {
+          ui: { title: reason, reason },
+        },
+      });
+    }
+
+    function showResult(imageDataUrl) {
+      resultImg.src = imageDataUrl;
+      resultSection.style.display = 'flex';
+      captureSection.style.display = 'none';
+    }
+
+    function resetToCapture() {
+      resultSection.style.display = 'none';
+      captureSection.style.display = 'flex';
+      resultImg.src = '';
+      const ctx = canvas.getContext('2d');
+      ctx?.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function emitVirtualButton(button) {
+      const tablet = connector?.internal?.deps?.tablet;
+      if (tablet && typeof tablet.emit === 'function') {
+        tablet.emit({ type: 'button', button });
+      }
+    }
+
+    async function startCapture() {
+      if (captureInFlight) return;
+      captureInFlight = true;
+      setStatus('Firme en la tableta y luego presione OK.');
+      postToHost('wacom-stu540:capture-started', { signerName, reason, where });
+
+      connector = buildConnector();
+
+      const captureRequest = {
+        signerName,
+        reason,
+        where,
+        outputFormat: 'png',
+        outputWidthPx: 1200,
+        outputHeightPx: 720,
+      };
+
+      let result;
+      try {
+        result = await connector.captureSignature(captureRequest);
+      } catch (err) {
+        captureInFlight = false;
+        const msg = String(err);
+        setStatus(`Error: ${msg}`, true);
+        postToHost('wacom-stu540:capture-error', { code: 'EXCEPTION', message: msg });
+        return;
+      }
+
+      captureInFlight = false;
+
+      if (!result.ok) {
+        const code = result.error.code;
+        const message = result.error.message;
+        setStatus(`Capture failed: ${code} — ${message}`, true);
+        if (code === 'SIGNATURE_CANCELLED') {
+          postToHost('wacom-stu540:capture-cancelled', { code, message });
+        } else {
+          postToHost('wacom-stu540:capture-error', { code, message });
+        }
+        return;
+      }
+
+      const value = result.value;
+      setStatus(`✓ Capturada (${value.strokeCount} trazos).`);
+      showResult(value.imageDataUrl);
+
+      // Decode base64 PNG bytes for inspection.
+      const dataUrl = value.imageDataUrl ?? '';
+      const commaIdx = dataUrl.indexOf(',');
+      const imageBase64 = commaIdx >= 0 ? dataUrl.slice(commaIdx + 1) : '';
+      const mime = commaIdx > 0 ? dataUrl.slice(5, commaIdx).split(';')[0] : 'image/png';
+
+      const payload = {
+        imageBase64,
+        imageDataUrl: value.imageDataUrl,
+        mime,
+        sigObjBase64: value.sigObjBase64 ?? '',
+        signerName: value.metadata?.who ?? signerName,
+        reason: value.metadata?.why ?? reason,
+        where: value.metadata?.where ?? where,
+        strokeCount: value.strokeCount ?? 0,
+        capturedAtUtc: new Date().toISOString(),
+      };
+      console.log('[wacom-stu540] capture-complete payload', {
+        mime, strokeCount: payload.strokeCount, base64Length: imageBase64.length,
+      });
+      postToHost('wacom-stu540:capture-complete', payload);
+    }
+
+    btnClear.addEventListener('click', () => {
+      if (captureInFlight) emitVirtualButton('clear');
+    });
+    btnCancel.addEventListener('click', () => {
+      if (captureInFlight) emitVirtualButton('cancel');
+    });
+    btnOk.addEventListener('click', () => {
+      if (!captureInFlight) void startCapture();
+      else emitVirtualButton('ok');
+    });
+    btnSignAgain.addEventListener('click', () => {
+      resetToCapture();
+      void startCapture();
+    });
+
+    // Allow the host PCF to drive the iframe via postMessage commands.
+    window.addEventListener('message', (event) => {
+      const data = event.data;
+      if (!data || typeof data !== 'object') return;
+      switch (data.type) {
+        case 'wacom-stu540:start':
+          if (!captureInFlight) {
+            resetToCapture();
+            void startCapture();
+          }
+          break;
+        case 'wacom-stu540:cancel':
+          if (captureInFlight) emitVirtualButton('cancel');
+          break;
+        case 'wacom-stu540:clear':
+          if (captureInFlight) emitVirtualButton('clear');
+          break;
+        case 'wacom-stu540:submit':
+          if (captureInFlight) emitVirtualButton('ok');
+          break;
+      }
+    });
+
+    // ── Boot ─────────────────────────────────────────────────────────
+    const sdk = await ensureWacomSdk();
+    if (sdk.loaded) {
+      setSdkStatus(`Signature SDK listo (${sdk.source}).`);
+    } else {
+      setSdkStatus('Signature SDK no detectado. Modo fallback (sin biométrico).');
+    }
+
+    postToHost('wacom-stu540:ready', { sdkLoaded: sdk.loaded, sdkSource: sdk.source ?? null });
+
+    if (autoStart) {
+      void startCapture();
+    } else {
+      setStatus('Esperando comando de inicio…');
+    }
+  </script>
+</body>
+</html>

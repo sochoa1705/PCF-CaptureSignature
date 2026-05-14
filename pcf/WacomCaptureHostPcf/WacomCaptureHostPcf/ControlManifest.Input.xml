@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<manifest>
+  <control namespace="bbol"
+           constructor="WacomCaptureHostPcf"
+           version="0.1.0"
+           display-name-key="Wacom STU-540 Capture"
+           description-key="Embeds the Wacom STU-540 signature capture page (hosted on Azure Static Web Apps) inside a Canvas App and surfaces the captured signature as outputs."
+           control-type="standard">
+
+    <external-service-usage enabled="true">
+      <domain>azurestaticapps.net</domain>
+    </external-service-usage>
+
+    <!-- ─── INPUT properties ─────────────────────────────────────── -->
+    <property name="IframeUrl"
+              display-name-key="Iframe URL"
+              description-key="Full HTTPS URL of the deployed capture.html (e.g. https://wacom-capture.azurestaticapps.net/capture.html)"
+              of-type="SingleLine.URL"
+              usage="input"
+              required="true" />
+
+    <property name="SignerName"
+              display-name-key="Signer Name"
+              description-key="Name of the person signing (sent to the capture page as ?signer=)"
+              of-type="SingleLine.Text"
+              usage="input"
+              required="false" />
+
+    <property name="Reason"
+              display-name-key="Reason"
+              description-key="Why the document is being signed (sent as ?reason=)"
+              of-type="SingleLine.Text"
+              usage="input"
+              required="false" />
+
+    <property name="Location"
+              display-name-key="Location"
+              description-key="Where the signature is being captured (sent as ?location=)"
+              of-type="SingleLine.Text"
+              usage="input"
+              required="false" />
+
+    <property name="License"
+              display-name-key="Wacom Runtime License"
+              description-key="(Optional) Wacom Signature SDK runtime license string. Empty = fallback (non-biometric) mode."
+              of-type="SingleLine.Text"
+              usage="input"
+              required="false" />
+
+    <property name="AutoStart"
+              display-name-key="Auto Start"
+              description-key="If true, capture starts automatically when the iframe loads."
+              of-type="TwoOptions"
+              usage="input"
+              required="false"
+              default-value="true" />
+
+    <!-- Bound trigger: app sets to "start"/"cancel"/"clear"/"submit" to drive
+         the capture from Power Fx. PCF resets to empty after dispatch so the
+         same command can be sent twice in a row. -->
+    <property name="Command"
+              display-name-key="Command"
+              description-key="Set to 'start', 'cancel', 'clear' or 'submit' to drive the capture from Power Fx. Resets to empty after dispatch."
+              of-type="SingleLine.Text"
+              usage="bound"
+              required="false" />
+
+    <!-- ─── OUTPUT properties ────────────────────────────────────── -->
+    <property name="Status"
+              display-name-key="Status"
+              description-key="Current status: Loading / Ready / Capturing / Captured / Cancelled / Error"
+              of-type="SingleLine.Text"
+              usage="output" />
+
+    <property name="ImageDataUrl"
+              display-name-key="Image Data URL"
+              description-key="Captured signature as a data URL (data:image/png;base64,...). Bind directly to Image.Image."
+              of-type="SingleLine.Text"
+              usage="output" />
+
+    <property name="ImageBase64"
+              display-name-key="Image Base64"
+              description-key="Captured signature as plain base64 PNG (no data URL prefix)."
+              of-type="SingleLine.Text"
+              usage="output" />
+
+    <property name="SigObjBase64"
+              display-name-key="SigObj Base64"
+              description-key="Wacom SigObj blob (base64). In fallback mode this is a tagged JSON envelope."
+              of-type="SingleLine.Text"
+              usage="output" />
+
+    <property name="StrokeCount"
+              display-name-key="Stroke Count"
+              description-key="Number of strokes in the captured signature."
+              of-type="Whole.None"
+              usage="output" />
+
+    <property name="CapturedAtUtc"
+              display-name-key="Captured At (UTC)"
+              description-key="Timestamp when the capture was completed."
+              of-type="DateAndTime.DateAndTime"
+              usage="output" />
+
+    <property name="LastError"
+              display-name-key="Last Error"
+              description-key="Error message from the most recent failed capture (empty on success)."
+              of-type="SingleLine.Text"
+              usage="output" />
+
+    <resources>
+      <code path="index.ts" order="1"/>
+      <css path="css/WacomCaptureHostPcf.css" order="1" />
+    </resources>
+
+  </control>
+</manifest>

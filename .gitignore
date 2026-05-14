@@ -5,3 +5,17 @@ coverage/
 .DS_Store
 .vscode/
 .idea/
+
+# PCF / .NET artifacts
+pcf/**/bin/
+pcf/**/obj/
+pcf/**/out/
+pcf/**/node_modules/
+pcf/**/generated/
+
+# web/ bundle: only commit the source files, not the copied build artifacts.
+# capture.html and staticwebapp.config.json ARE committed.
+web/index.js
+web/signature-sdk.js
+web/signature-sdk.wasm
+web/stu-sdk.min.js

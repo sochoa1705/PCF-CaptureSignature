@@ -127,6 +127,12 @@ if (result.ok) {
 
 ## Power Apps integration
 
+> 📘 **Para integración completa en Canvas Apps via PCF + Azure Static Web Apps,
+> consulta [`docs/CANVAS_INTEGRATION.md`](docs/CANVAS_INTEGRATION.md).**
+> Esa guía cubre el control PCF `bbol.WacomCaptureHostPcf`, su deploy con
+> GitHub Actions, configuración en Power Apps y patrones de uso (Patch a
+> Dataverse, Image binding, comandos por Power Fx, etc.).
+
 ### Option A — iframe (recommended)
 
 1. Host `examples/powerapps-iframe.html` on the same tenant origin

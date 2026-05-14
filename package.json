@@ -20,6 +20,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json && tsup src/index.ts --format esm,cjs --dts --clean",
+    "build:web": "npm run build && node scripts/build-web.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
